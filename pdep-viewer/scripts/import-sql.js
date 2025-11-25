@@ -135,6 +135,13 @@ const prepprops = importSqlFile("prepprops.sql", [
   "clanal", "subc"
 ]);
 
+// Fix typos in source data
+for (const row of prepprops) {
+  if (row.opreps && typeof row.opreps === "string") {
+    row.opreps = row.opreps.replace(/aprt from/g, "apart from");
+  }
+}
+
 // Write JSON files
 writeFileSync(join(outDir, "prepdefs.json"), JSON.stringify(prepdefs, null, 2));
 writeFileSync(join(outDir, "prepcorp.json"), JSON.stringify(prepcorp, null, 2));

@@ -1,16 +1,27 @@
-import { createSignal, createMemo, For, Show } from "solid-js";
+import { createSignal, createMemo, For, Show, Suspense } from "solid-js";
+import { cache, createAsync, action, useAction } from "@solidjs/router";
 import {
   getPrepsWithMultipleSenses,
-  getRandomCorpusExample,
-  getDefsForPrep,
+  getRandomQuizQuestion,
   type PrepCorp,
   type PrepDef,
-} from "../lib/data";
+} from "../lib/data.server";
 
-type QuizState = "playing" | "answered" | "finished";
+const getQuizPreps = cache(async () => {
+  "use server";
+  return getPrepsWithMultipleSenses();
+}, "quiz-preps");
+
+const fetchQuestion = action(async (preps: string[]) => {
+  "use server";
+  return getRandomQuizQuestion(preps);
+});
+
+type QuizState = "playing" | "answered";
 
 export default function Quiz() {
-  const availablePreps = getPrepsWithMultipleSenses();
+  const availablePreps = createAsync(() => getQuizPreps());
+  const getQuestion = useAction(fetchQuestion);
 
   const [currentExample, setCurrentExample] = createSignal<PrepCorp | null>(null);
   const [options, setOptions] = createSignal<PrepDef[]>([]);
@@ -19,6 +30,7 @@ export default function Quiz() {
   const [score, setScore] = createSignal(0);
   const [totalQuestions, setTotalQuestions] = createSignal(0);
   const [streak, setStreak] = createSignal(0);
+  const [loading, setLoading] = createSignal(false);
 
   const isCorrect = createMemo(() => {
     const example = currentExample();
@@ -32,40 +44,25 @@ export default function Quiz() {
     return options().find(o => o.sense === example.sense);
   });
 
-  const MAX_OPTIONS = 4;
+  async function loadNewQuestion() {
+    const preps = availablePreps();
+    if (!preps || preps.length === 0) return;
 
-  function loadNewQuestion() {
-    // Pick a random preposition
-    const prep = availablePreps[Math.floor(Math.random() * availablePreps.length)];
-    const example = getRandomCorpusExample(prep);
-
-    if (!example) {
-      loadNewQuestion();
-      return;
+    setLoading(true);
+    try {
+      const result = await getQuestion(preps);
+      if (result) {
+        setCurrentExample(result.example);
+        setOptions(result.options);
+        setSelectedAnswer(null);
+        setQuizState("playing");
+      } else {
+        // Retry if no result
+        await loadNewQuestion();
+      }
+    } finally {
+      setLoading(false);
     }
-
-    const defs = getDefsForPrep(prep);
-
-    // Limit to MAX_OPTIONS: always include correct answer + random distractors
-    let finalOptions: PrepDef[];
-    if (defs.length <= MAX_OPTIONS) {
-      finalOptions = [...defs];
-    } else {
-      const correctDef = defs.find(d => d.sense === example.sense);
-      const distractors = defs
-        .filter(d => d.sense !== example.sense)
-        .sort(() => Math.random() - 0.5)
-        .slice(0, MAX_OPTIONS - 1);
-      finalOptions = correctDef ? [correctDef, ...distractors] : distractors;
-    }
-
-    // Shuffle the options
-    const shuffled = finalOptions.sort(() => Math.random() - 0.5);
-
-    setCurrentExample(example);
-    setOptions(shuffled);
-    setSelectedAnswer(null);
-    setQuizState("playing");
   }
 
   function handleAnswer(sense: string) {
@@ -88,10 +85,13 @@ export default function Quiz() {
     loadNewQuestion();
   }
 
-  // Start with first question
-  if (!currentExample()) {
-    loadNewQuestion();
-  }
+  // Start with first question when preps are loaded
+  createMemo(() => {
+    const preps = availablePreps();
+    if (preps && preps.length > 0 && !currentExample() && !loading()) {
+      loadNewQuestion();
+    }
+  });
 
   const highlightedSentence = createMemo(() => {
     const example = currentExample();
@@ -136,67 +136,73 @@ export default function Quiz() {
         </div>
       </div>
 
-      <Show when={currentExample()}>
-        {example => (
-          <div class="quiz-content">
-            <div class="quiz-sentence">
-              <p>
-                Which sense of <strong>"{example().prep}"</strong> is used here?
-              </p>
-              <blockquote>
-                <span>{highlightedSentence().before}</span>
-                <span class="prep-highlight">{highlightedSentence().prep}</span>
-                <span>{highlightedSentence().after}</span>
-              </blockquote>
-            </div>
+      <Suspense fallback={<p class="loading">Loading quiz...</p>}>
+        <Show when={loading()}>
+          <p class="loading">Loading question...</p>
+        </Show>
 
-            <div class="quiz-options">
-              <For each={options()}>
-                {option => {
-                  const isSelected = () => selectedAnswer() === option.sense;
-                  const isCorrectOption = () => example().sense === option.sense;
-                  const showCorrect = () => quizState() === "answered" && isCorrectOption();
-                  const showWrong = () => quizState() === "answered" && isSelected() && !isCorrectOption();
-
-                  return (
-                    <button
-                      class={`quiz-option ${isSelected() ? "selected" : ""} ${showCorrect() ? "correct" : ""} ${
-                        showWrong() ? "wrong" : ""
-                      }`}
-                      onClick={() => handleAnswer(option.sense)}
-                      disabled={quizState() !== "playing"}
-                    >
-                      <span class="sense-id">{option.sense}</span>
-                      <span class="sense-def">{option.def}</span>
-                    </button>
-                  );
-                }}
-              </For>
-            </div>
-
-            <Show when={quizState() === "answered"}>
-              <div class={`quiz-feedback ${isCorrect() ? "correct" : "wrong"}`}>
-                <Show when={isCorrect()}>
-                  <p>Correct!</p>
-                </Show>
-                <Show when={!isCorrect()}>
-                  <p>
-                    Not quite. The correct answer was: <strong>{correctAnswer()?.sense}</strong>: {correctAnswer()?.def}
-                  </p>
-                </Show>
-                <div class="quiz-actions">
-                  <button class="btn-primary" onClick={nextQuestion}>
-                    Next Question
-                  </button>
-                  <a href={`/prep/${encodeURIComponent(example().prep)}/${encodeURIComponent(example().sense)}`}>
-                    View more examples
-                  </a>
-                </div>
+        <Show when={!loading() && currentExample()} keyed>
+          {(example) => (
+            <div class="quiz-content">
+              <div class="quiz-sentence">
+                <p>
+                  Which sense of <strong>"{example.prep}"</strong> is used here?
+                </p>
+                <blockquote>
+                  <span>{highlightedSentence().before}</span>
+                  <span class="prep-highlight">{highlightedSentence().prep}</span>
+                  <span>{highlightedSentence().after}</span>
+                </blockquote>
               </div>
-            </Show>
-          </div>
-        )}
-      </Show>
+
+              <div class="quiz-options">
+                <For each={options()}>
+                  {option => {
+                    const isSelected = () => selectedAnswer() === option.sense;
+                    const isCorrectOption = () => example.sense === option.sense;
+                    const showCorrect = () => quizState() === "answered" && isCorrectOption();
+                    const showWrong = () => quizState() === "answered" && isSelected() && !isCorrectOption();
+
+                    return (
+                      <button
+                        class={`quiz-option ${isSelected() ? "selected" : ""} ${showCorrect() ? "correct" : ""} ${
+                          showWrong() ? "wrong" : ""
+                        }`}
+                        onClick={() => handleAnswer(option.sense)}
+                        disabled={quizState() !== "playing"}
+                      >
+                        <span class="sense-id">{option.sense}</span>
+                        <span class="sense-def">{option.def}</span>
+                      </button>
+                    );
+                  }}
+                </For>
+              </div>
+
+              <Show when={quizState() === "answered"}>
+                <div class={`quiz-feedback ${isCorrect() ? "correct" : "wrong"}`}>
+                  <Show when={isCorrect()}>
+                    <p>Correct!</p>
+                  </Show>
+                  <Show when={!isCorrect()}>
+                    <p>
+                      Not quite. The correct answer was: <strong>{correctAnswer()?.sense}</strong>: {correctAnswer()?.def}
+                    </p>
+                  </Show>
+                  <div class="quiz-actions">
+                    <button class="btn-primary" onClick={nextQuestion}>
+                      Next Question
+                    </button>
+                    <a href={`/prep/${encodeURIComponent(example.prep)}/${encodeURIComponent(example.sense)}`}>
+                      View more examples
+                    </a>
+                  </div>
+                </div>
+              </Show>
+            </div>
+          )}
+        </Show>
+      </Suspense>
     </main>
   );
 }

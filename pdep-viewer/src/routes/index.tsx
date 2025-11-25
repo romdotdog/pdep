@@ -1,25 +1,25 @@
-import { createSignal, createMemo, For } from "solid-js";
-import { getAllPreps, getSenseCountForPrep, getExampleCountForPrep } from "../lib/data";
+import { createSignal, createMemo, For, Suspense } from "solid-js";
+import { cache, createAsync } from "@solidjs/router";
+import { getAllPrepStats, type PrepStats } from "../lib/data.server";
+
+const getPrepStats = cache(async () => {
+  "use server";
+  return getAllPrepStats();
+}, "prep-stats");
 
 type SortOption = "alpha" | "senses" | "examples";
 
 export default function Home() {
-  const preps = getAllPreps();
+  const prepStats = createAsync(() => getPrepStats());
   const [search, setSearch] = createSignal("");
   const [sortBy, setSortBy] = createSignal<SortOption>("alpha");
 
-  // Pre-compute counts for sorting (avoid repeated lookups)
-  const prepStats = createMemo(() => {
-    return preps.map((prep) => ({
-      prep,
-      senses: getSenseCountForPrep(prep),
-      examples: getExampleCountForPrep(prep),
-    }));
-  });
-
   const filteredAndSortedPreps = createMemo(() => {
+    const stats = prepStats();
+    if (!stats) return [];
+
     const q = search().toLowerCase();
-    let results = prepStats();
+    let results = stats as PrepStats[];
 
     if (q) {
       results = results.filter((p) => p.prep.toLowerCase().includes(q));
@@ -68,22 +68,24 @@ export default function Home() {
         </span>
       </div>
 
-      <p class="sense-count">
-        {filteredAndSortedPreps().length} preposition{filteredAndSortedPreps().length !== 1 ? "s" : ""}
-      </p>
+      <Suspense fallback={<p class="loading">Loading prepositions...</p>}>
+        <p class="sense-count">
+          {filteredAndSortedPreps().length} preposition{filteredAndSortedPreps().length !== 1 ? "s" : ""}
+        </p>
 
-      <div class="prep-grid">
-        <For each={filteredAndSortedPreps()}>
-          {(item) => (
-            <a class="prep-link" href={`/prep/${encodeURIComponent(item.prep)}`}>
-              <span class="prep-name">{item.prep}</span>
-              <span class="prep-stats">
-                {item.senses} sense{item.senses !== 1 ? "s" : ""}
-              </span>
-            </a>
-          )}
-        </For>
-      </div>
+        <div class="prep-grid">
+          <For each={filteredAndSortedPreps()}>
+            {(item) => (
+              <a class="prep-link" href={`/prep/${encodeURIComponent(item.prep)}`}>
+                <span class="prep-name">{item.prep}</span>
+                <span class="prep-stats">
+                  {item.senses} sense{item.senses !== 1 ? "s" : ""}
+                </span>
+              </a>
+            )}
+          </For>
+        </div>
+      </Suspense>
     </main>
   );
 }

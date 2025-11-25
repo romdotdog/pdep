@@ -1,11 +1,22 @@
 import { useParams } from "@solidjs/router";
-import { createSignal, createMemo, For, Show, onMount, onCleanup } from "solid-js";
+import { createSignal, createMemo, For, Show, onMount, onCleanup, Suspense } from "solid-js";
+import { cache, createAsync } from "@solidjs/router";
 import {
   getDefForSense,
   getPropForSense,
   getCorpusForPrepSense,
-} from "../../../lib/data";
+} from "../../../lib/data.server";
 import { ExampleSentence, SenseProps } from "../../../components";
+
+const getSenseData = cache(async (prep: string, sense: string) => {
+  "use server";
+  const [def, prop, examples] = await Promise.all([
+    getDefForSense(prep, sense),
+    getPropForSense(prep, sense),
+    getCorpusForPrepSense(prep, sense),
+  ]);
+  return { def, prop, examples };
+}, "sense-data");
 
 const PAGE_SIZE = 20;
 
@@ -14,9 +25,11 @@ export default function SensePage() {
   const prep = () => decodeURIComponent(params.prep ?? "");
   const sense = () => decodeURIComponent(params.sense ?? "");
 
-  const def = createMemo(() => getDefForSense(prep(), sense()));
-  const prop = createMemo(() => getPropForSense(prep(), sense()));
-  const allExamples = createMemo(() => getCorpusForPrepSense(prep(), sense()));
+  const data = createAsync(() => getSenseData(prep(), sense()));
+
+  const def = () => data()?.def;
+  const prop = () => data()?.prop;
+  const allExamples = () => data()?.examples ?? [];
 
   const [visibleCount, setVisibleCount] = createSignal(PAGE_SIZE);
   const [showStickyHeader, setShowStickyHeader] = createSignal(false);
@@ -97,21 +110,23 @@ export default function SensePage() {
 
       <div style={{ "margin-top": "2rem" }}></div>
 
-      <h3>Examples ({allExamples().length})</h3>
+      <Suspense fallback={<p class="loading">Loading examples...</p>}>
+        <h3>Examples ({allExamples().length})</h3>
 
-      <For each={visibleExamples()}>
-        {(ex) => <ExampleSentence example={ex} prep={prep()} />}
-      </For>
+        <For each={visibleExamples()}>
+          {(ex) => <ExampleSentence example={ex} prep={prep()} />}
+        </For>
 
-      <Show when={hasMore()}>
-        <div ref={sentinelRef} class="loading">
-          Loading more examples...
-        </div>
-      </Show>
+        <Show when={hasMore()}>
+          <div ref={sentinelRef} class="loading">
+            Loading more examples...
+          </div>
+        </Show>
 
-      <Show when={allExamples().length === 0}>
-        <p>No examples found for this sense.</p>
-      </Show>
+        <Show when={data() && allExamples().length === 0}>
+          <p>No examples found for this sense.</p>
+        </Show>
+      </Suspense>
     </main>
   );
 }

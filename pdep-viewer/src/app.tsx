@@ -18,7 +18,7 @@ export default function App() {
             <nav>
               <a href="/quiz">Quiz</a>
               <a
-                href="https://github.com/romnn/pdep"
+                href="https://github.com/romdotdog/pdep"
                 target="_blank"
                 rel="noopener noreferrer"
                 class="github-link"
