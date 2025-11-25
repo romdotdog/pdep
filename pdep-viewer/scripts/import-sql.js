@@ -4,7 +4,7 @@ import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const sqlDir = join(__dirname, "../../SQL");
-const outDir = join(__dirname, "../src/data");
+const outDir = join(__dirname, "../public");
 
 function parseSqlValues(sql, columns) {
   // Extract all VALUES sections and concatenate them
@@ -142,17 +142,15 @@ for (const row of prepprops) {
   }
 }
 
-// Write JSON files
-writeFileSync(join(outDir, "prepdefs.json"), JSON.stringify(prepdefs, null, 2));
-writeFileSync(join(outDir, "prepcorp.json"), JSON.stringify(prepcorp, null, 2));
-writeFileSync(join(outDir, "prepprops.json"), JSON.stringify(prepprops, null, 2));
-
 // Create index of unique prepositions
 const prepsSet = new Set(prepdefs.map(p => p.prep));
 const preps = Array.from(prepsSet).sort();
-writeFileSync(join(outDir, "preps.json"), JSON.stringify(preps, null, 2));
 
-console.log(`\nDone! Exported:`);
+// Write single combined JSON file (no pretty print to save space)
+const data = { preps, prepdefs, prepprops, prepcorp };
+writeFileSync(join(outDir, "data.json"), JSON.stringify(data));
+
+console.log(`\nDone! Exported to public/data.json:`);
 console.log(`  ${prepdefs.length} definitions`);
 console.log(`  ${prepcorp.length} corpus examples`);
 console.log(`  ${prepprops.length} properties`);

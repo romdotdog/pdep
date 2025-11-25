@@ -1,47 +1,26 @@
 import { useParams } from "@solidjs/router";
-import { createSignal, createMemo, For, Show, onMount, onCleanup, Suspense } from "solid-js";
-import { cache, createAsync } from "@solidjs/router";
+import { createSignal, createMemo, For, Show, onMount, onCleanup } from "solid-js";
 import {
   getDefsForPrep,
   getPropsForPrep,
   getCorpusForPrepSense,
+  isLoaded,
   type PrepDef,
   type PrepProp,
-} from "../../../lib/data.server";
+} from "../../../lib/data";
 import { ExampleSentence, SenseProps } from "../../../components";
 
-const getPrepData = cache(async (prep: string) => {
-  "use server";
-  const [defs, props] = await Promise.all([
-    getDefsForPrep(prep),
-    getPropsForPrep(prep),
-  ]);
-  return { defs, props };
-}, "prep-data");
-
-const getExampleCount = cache(async (prep: string, sense: string) => {
-  "use server";
-  const examples = await getCorpusForPrepSense(prep, sense);
-  return examples.length;
-}, "example-count");
-
-const getExamples = cache(async (prep: string, sense: string) => {
-  "use server";
-  const examples = await getCorpusForPrepSense(prep, sense);
-  return examples.slice(0, 10);
-}, "examples");
-
-function SenseCard(props: {
-  def: PrepDef;
-  prop?: PrepProp;
-  prep: string;
-  highlighted: () => string | null;
-  setHighlighted: (id: string | null) => void;
-}) {
+function SenseCard(props: { def: PrepDef; prop?: PrepProp; prep: string; highlighted: () => string | null; setHighlighted: (id: string | null) => void }) {
   const [showExamples, setShowExamples] = createSignal(false);
 
-  const exampleCount = createAsync(() => getExampleCount(props.prep, props.def.sense));
-  const examples = createAsync(() => showExamples() ? getExamples(props.prep, props.def.sense) : Promise.resolve([]));
+  const examples = createMemo(() => {
+    if (!showExamples()) return [];
+    return getCorpusForPrepSense(props.prep, props.def.sense).slice(0, 10);
+  });
+
+  const exampleCount = createMemo(() => {
+    return getCorpusForPrepSense(props.prep, props.def.sense).length;
+  });
 
   const handleAnchorClick = (e: MouseEvent) => {
     e.preventDefault();
@@ -63,26 +42,24 @@ function SenseCard(props: {
         {(prop) => <SenseProps prop={prop()} />}
       </Show>
 
-      <Show when={(exampleCount() ?? 0) > 0}>
+      <Show when={exampleCount() > 0}>
         <div class="examples-section">
           <button class="examples-toggle" onClick={() => setShowExamples(!showExamples())}>
             {showExamples() ? "Hide" : "Show"} examples ({exampleCount()})
           </button>
 
           <Show when={showExamples()}>
-            <Suspense fallback={<p class="loading">Loading examples...</p>}>
-              <For each={examples()}>
-                {(ex) => <ExampleSentence example={ex} prep={props.prep} />}
-              </For>
-              <Show when={(exampleCount() ?? 0) > 10}>
-                <p class="example-meta">
-                  Showing 10 of {exampleCount()} examples.{" "}
-                  <a href={`/prep/${encodeURIComponent(props.prep)}/${encodeURIComponent(props.def.sense)}`}>
-                    View all &rarr;
-                  </a>
-                </p>
-              </Show>
-            </Suspense>
+            <For each={examples()}>
+              {(ex) => <ExampleSentence example={ex} prep={props.prep} />}
+            </For>
+            <Show when={exampleCount() > 10}>
+              <p class="example-meta">
+                Showing 10 of {exampleCount()} examples.{" "}
+                <a href={`/prep/${encodeURIComponent(props.prep)}/${encodeURIComponent(props.def.sense)}`}>
+                  View all &rarr;
+                </a>
+              </p>
+            </Show>
           </Show>
         </div>
       </Show>
@@ -94,10 +71,14 @@ export default function PrepDetail() {
   const params = useParams();
   const prep = () => decodeURIComponent(params.prep ?? "");
 
-  const data = createAsync(() => getPrepData(prep()));
-
-  const defs = () => data()?.defs ?? [];
-  const propsData = () => data()?.props ?? [];
+  const defs = createMemo(() => {
+    if (!isLoaded()) return [];
+    return getDefsForPrep(prep());
+  });
+  const propsData = createMemo(() => {
+    if (!isLoaded()) return [];
+    return getPropsForPrep(prep());
+  });
 
   const propsMap = createMemo(() => {
     const map = new Map<string, PrepProp>();
@@ -126,15 +107,19 @@ export default function PrepDetail() {
         </p>
       </div>
 
-      <Suspense fallback={<p class="loading">Loading senses...</p>}>
+      <Show when={!isLoaded()}>
+        <p class="loading">Loading data...</p>
+      </Show>
+
+      <Show when={isLoaded()}>
         <For each={defs()}>
           {(def) => <SenseCard def={def} prop={propsMap().get(def.sense)} prep={prep()} highlighted={highlighted} setHighlighted={setHighlighted} />}
         </For>
-      </Suspense>
 
-      <Show when={data() && defs().length === 0}>
-        <p>No definitions found for "{prep()}"</p>
-        <a href="/">Back to list</a>
+        <Show when={defs().length === 0}>
+          <p>No definitions found for "{prep()}"</p>
+          <a href="/">Back to list</a>
+        </Show>
       </Show>
     </main>
   );

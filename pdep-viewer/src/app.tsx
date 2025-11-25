@@ -1,13 +1,29 @@
 import { Router } from "@solidjs/router";
 import { FileRoutes } from "@solidjs/start/router";
-import { Suspense } from "solid-js";
+import { Suspense, Show, onMount } from "solid-js";
+import { loadData, isLoaded, loadProgress } from "./lib/data";
 import "./app.css";
 
 export default function App() {
+  onMount(() => {
+    loadData();
+  });
+
   return (
     <Router
       root={props => (
         <>
+          <Show when={!isLoaded()}>
+            <div class="loading-overlay">
+              <div class="loading-content">
+                <h2>Loading PDEP Data</h2>
+                <div class="progress-bar">
+                  <div class="progress-fill" style={{ width: `${loadProgress() * 100}%` }} />
+                </div>
+                <p>{Math.round(loadProgress() * 100)}%</p>
+              </div>
+            </div>
+          </Show>
           <header>
             <div class="header-content">
               <a href="/">

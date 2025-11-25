@@ -1,22 +1,12 @@
 import { useParams } from "@solidjs/router";
-import { createSignal, createMemo, For, Show, onMount, onCleanup, Suspense } from "solid-js";
-import { cache, createAsync } from "@solidjs/router";
+import { createSignal, createMemo, For, Show, onMount, onCleanup } from "solid-js";
 import {
   getDefForSense,
   getPropForSense,
   getCorpusForPrepSense,
-} from "../../../lib/data.server";
+  isLoaded,
+} from "../../../lib/data";
 import { ExampleSentence, SenseProps } from "../../../components";
-
-const getSenseData = cache(async (prep: string, sense: string) => {
-  "use server";
-  const [def, prop, examples] = await Promise.all([
-    getDefForSense(prep, sense),
-    getPropForSense(prep, sense),
-    getCorpusForPrepSense(prep, sense),
-  ]);
-  return { def, prop, examples };
-}, "sense-data");
 
 const PAGE_SIZE = 20;
 
@@ -25,11 +15,18 @@ export default function SensePage() {
   const prep = () => decodeURIComponent(params.prep ?? "");
   const sense = () => decodeURIComponent(params.sense ?? "");
 
-  const data = createAsync(() => getSenseData(prep(), sense()));
-
-  const def = () => data()?.def;
-  const prop = () => data()?.prop;
-  const allExamples = () => data()?.examples ?? [];
+  const def = createMemo(() => {
+    if (!isLoaded()) return undefined;
+    return getDefForSense(prep(), sense());
+  });
+  const prop = createMemo(() => {
+    if (!isLoaded()) return undefined;
+    return getPropForSense(prep(), sense());
+  });
+  const allExamples = createMemo(() => {
+    if (!isLoaded()) return [];
+    return getCorpusForPrepSense(prep(), sense());
+  });
 
   const [visibleCount, setVisibleCount] = createSignal(PAGE_SIZE);
   const [showStickyHeader, setShowStickyHeader] = createSignal(false);
@@ -110,7 +107,11 @@ export default function SensePage() {
 
       <div style={{ "margin-top": "2rem" }}></div>
 
-      <Suspense fallback={<p class="loading">Loading examples...</p>}>
+      <Show when={!isLoaded()}>
+        <p class="loading">Loading data...</p>
+      </Show>
+
+      <Show when={isLoaded()}>
         <h3>Examples ({allExamples().length})</h3>
 
         <For each={visibleExamples()}>
@@ -123,10 +124,10 @@ export default function SensePage() {
           </div>
         </Show>
 
-        <Show when={data() && allExamples().length === 0}>
+        <Show when={allExamples().length === 0}>
           <p>No examples found for this sense.</p>
         </Show>
-      </Suspense>
+      </Show>
     </main>
   );
 }

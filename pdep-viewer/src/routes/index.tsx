@@ -1,25 +1,26 @@
-import { createSignal, createMemo, For, Suspense } from "solid-js";
-import { cache, createAsync } from "@solidjs/router";
-import { getAllPrepStats, type PrepStats } from "../lib/data.server";
-
-const getPrepStats = cache(async () => {
-  "use server";
-  return getAllPrepStats();
-}, "prep-stats");
+import { createSignal, createMemo, For, Show } from "solid-js";
+import { getAllPreps, getSenseCountForPrep, getExampleCountForPrep, isLoaded } from "../lib/data";
 
 type SortOption = "alpha" | "senses" | "examples";
 
 export default function Home() {
-  const prepStats = createAsync(() => getPrepStats());
   const [search, setSearch] = createSignal("");
   const [sortBy, setSortBy] = createSignal<SortOption>("alpha");
 
-  const filteredAndSortedPreps = createMemo(() => {
-    const stats = prepStats();
-    if (!stats) return [];
+  const prepStats = createMemo(() => {
+    // Re-run when data loads
+    if (!isLoaded()) return [];
+    const preps = getAllPreps();
+    return preps.map((prep) => ({
+      prep,
+      senses: getSenseCountForPrep(prep),
+      examples: getExampleCountForPrep(prep),
+    }));
+  });
 
+  const filteredAndSortedPreps = createMemo(() => {
     const q = search().toLowerCase();
-    let results = stats as PrepStats[];
+    let results = prepStats();
 
     if (q) {
       results = results.filter((p) => p.prep.toLowerCase().includes(q));
@@ -68,7 +69,11 @@ export default function Home() {
         </span>
       </div>
 
-      <Suspense fallback={<p class="loading">Loading prepositions...</p>}>
+      <Show when={!isLoaded()}>
+        <p class="loading">Loading data...</p>
+      </Show>
+
+      <Show when={isLoaded()}>
         <p class="sense-count">
           {filteredAndSortedPreps().length} preposition{filteredAndSortedPreps().length !== 1 ? "s" : ""}
         </p>
@@ -85,7 +90,7 @@ export default function Home() {
             )}
           </For>
         </div>
-      </Suspense>
+      </Show>
     </main>
   );
 }
