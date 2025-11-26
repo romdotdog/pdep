@@ -2,11 +2,13 @@
 
 **This is vibe-coded material.**
 
-An interactive web viewer for exploring the [Pattern Dictionary of English Prepositions](https://aclanthology.org/P14-1120/) (PDEP), a comprehensive lexical resource documenting 1,040+ sense patterns across 304 English prepositions with tagged corpus examples.
+An interactive web viewer for exploring the [Pattern Dictionary of English Prepositions](https://aclanthology.org/P14-1120/) (PDEP), a lexical resource documenting 1,040+ sense patterns across 304 English prepositions with tagged corpus examples.
+
+Try it out: https://pdep.rom.dog/
 
 ## About
 
-The Pattern Dictionary of English Prepositions extends [The Preposition Project](https://arxiv.org/abs/2104.08922) (TPP) by Kenneth Litkowski and Orin Hargraves, providing detailed syntactic and semantic patterns for preposition usage. Each sense includes:
+The Pattern Dictionary of English Prepositions extends [The Preposition Project](https://arxiv.org/abs/2104.08922) (TPP) by Kenneth Litkowski and Orin Hargraves, providing syntactic and semantic patterns for preposition usage.
 
 ## Data Recovery
 
